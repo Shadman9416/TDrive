@@ -3,6 +3,9 @@ name: Android fork build
 # Manual build of the custom fork APK (side-by-side app ID com.jeetraj.tdrive.fork).
 # Signed with the fork's own key from repository secrets; uploads the APK as an artifact.
 on:
+  push:
+    branches: [custom/viewer-video-slides]
+    paths: ['.github/workflows/android-fork.yml']
   workflow_dispatch:
     inputs:
       android_tag:
@@ -20,7 +23,7 @@ jobs:
     timeout-minutes: 45
     env:
       GOFLAGS: ""
-      ANDROID_TAG: ${{ inputs.android_tag }}
+      ANDROID_TAG: ${{ inputs.android_tag || 'v2.3.0' }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
