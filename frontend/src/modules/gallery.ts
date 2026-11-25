@@ -458,14 +458,7 @@ async function openGalleryLightbox(item: GalleryItem): Promise<void> {
             if (index === undefined) return null;
             const neighbor = await source.get(index + direction);
             if (!neighbor || currentSource !== source || currentChannelId !== channelId) return null;
-            // The image viewer never requests an original for a video. The
-            // player takes over at that position instead, so a step lands on
-            // the item the counter names and a run of videos is no dead end.
-            if (isVideoFile(neighbor.name)) {
-                preview.closePreviewModal();
-                void openGalleryVideo(neighbor);
-                return null;
-            }
+            // Videos are returned as slides; the viewer shows a poster and the play button starts the player.
             return previewItem(neighbor, channelId);
         },
         getPosition(active) {
@@ -477,7 +470,22 @@ async function openGalleryLightbox(item: GalleryItem): Promise<void> {
             if (!currentSource || currentChannelId !== channelId) return null;
             const index = currentSource.indexOf(Number(active.id));
             const neighbor = index === undefined ? undefined : currentSource.peek(index + direction);
-            return neighbor && !isVideoFile(neighbor.name) ? previewItem(neighbor, channelId) : null;
+            return neighbor ? previewItem(neighbor, channelId) : null;
+        },
+        playVideo(active) {
+            const source = currentSource;
+            if (!source || currentChannelId !== channelId) return;
+            const index = source.indexOf(Number(active.id));
+            const gallery = index === undefined ? undefined : source.peek(index);
+            if (!gallery) return;
+            void import('./modals/video').then((videoModule) => {
+                if (currentSource !== source || currentChannelId !== channelId) return;
+                videoModule.onNextVideoModalClose(() => {
+                    if (currentSource === source && currentChannelId === channelId) void openGalleryLightbox(gallery);
+                });
+                preview.closePreviewModal();
+                void openGalleryVideo(gallery);
+            });
         },
     }, previewItem(item, channelId));
 }

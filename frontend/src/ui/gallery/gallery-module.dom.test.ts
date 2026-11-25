@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import type { MediaTimeline } from '../../api/gallery';
 
-const mocks = vi.hoisted(() => ({ timeline: vi.fn(), folderTimeline: vi.fn(), page: vi.fn(), folderPage: vi.fn(), folders: vi.fn(), locate: vi.fn(), preview: vi.fn(), closePreview: vi.fn(), video: vi.fn(), menu: vi.fn(), mobile: false }));
+const mocks = vi.hoisted(() => ({ timeline: vi.fn(), folderTimeline: vi.fn(), page: vi.fn(), folderPage: vi.fn(), folders: vi.fn(), locate: vi.fn(), preview: vi.fn(), closePreview: vi.fn(), video: vi.fn(), onClose: vi.fn(), menu: vi.fn(), mobile: false }));
 vi.mock('../../api', () => ({ isMobilePlatform: () => mocks.mobile }));
 vi.mock('../../api/gallery', () => ({ getMediaTimelineSummary: mocks.timeline, getMediaTimelineAnchors: mocks.timeline, getMediaFolderTimeline: mocks.folderTimeline, listMediaPage: mocks.page, listMediaFolderPage: mocks.folderPage, listMediaFolders: mocks.folders, locateMedia: mocks.locate }));
 vi.mock('../../modules/search', () => ({ clearSearch: vi.fn() }));
@@ -20,7 +20,7 @@ vi.mock('../menus/context-menu-store', () => ({ showContextMenu: mocks.menu }));
 vi.mock('../file-list/touch', () => ({ bindLongPress: () => () => {}, bindPullToRefresh: () => () => {} }));
 vi.mock('./gallery-controller', () => ({ beginRender: vi.fn(), cachedThumb: () => '', rearmLocked: vi.fn(), setActive: vi.fn(), setRoot: vi.fn(), teardown: vi.fn() }));
 vi.mock('../../modules/modals/preview', () => ({ activatePreviewModal: vi.fn(), closePreviewModal: mocks.closePreview, openPreviewSource: mocks.preview }));
-vi.mock('../../modules/modals/video', () => ({ openVideoModal: mocks.video }));
+vi.mock('../../modules/modals/video', () => ({ openVideoModal: mocks.video, onNextVideoModalClose: mocks.onClose }));
 import { state } from '../../state';
 import { activateGallery, enterPhotos, exitPhotos, renderGallery, setPhotosMode, teardownGallery, toggleGallerySelection } from '../../modules/gallery';
 import { albumsView, galleryView, photosMode } from './gallery-store';
@@ -40,7 +40,7 @@ beforeEach(() => {
     state.selectedItems = new Map();
     mocks.timeline.mockReset().mockImplementation(async () => timeline());
     mocks.page.mockReset().mockImplementation(async (cursor: string) => ({ generation, startIndex: Number(cursor), nextCursor: '', items: Array.from({ length: Math.min(128, 1000 - Number(cursor)) }, (_, offset) => ({ msgId: Number(cursor) + offset + 1, name: 'photo.jpg', size: 12, parentId: '', uploadTime: 1, uploaderId: 1, encrypted: false, plaintextSize: 0, revision: 1, contentMsgId: 1, contentHash: '' })) }));
-    mocks.preview.mockReset(); mocks.locate.mockReset(); mocks.closePreview.mockReset(); mocks.video.mockReset(); mocks.menu.mockReset();
+    mocks.preview.mockReset(); mocks.locate.mockReset(); mocks.closePreview.mockReset(); mocks.video.mockReset(); mocks.onClose.mockReset(); mocks.menu.mockReset();
     mocks.folders.mockReset().mockResolvedValue([]);
     mocks.folderTimeline.mockReset(); mocks.folderPage.mockReset();
     photosMode.set({ kind: 'timeline' });
@@ -233,7 +233,7 @@ describe('gallery orchestration', () => {
         expect(source.getPosition(first)).toBeNull();
     });
 
-    it('hands a video neighbor to the player instead of skipping past it', async () => {
+    it('returns a video neighbour as a slide and does not open the player', async () => {
         const photos = mocks.page.getMockImplementation()!;
         mocks.page.mockImplementation(async (...args: unknown[]) => {
             const page = await photos(...args);
@@ -245,14 +245,14 @@ describe('gallery orchestration', () => {
         await vi.waitFor(() => expect(mocks.preview).toHaveBeenCalledOnce());
         const [source, first] = mocks.preview.mock.calls[0];
 
-        expect(await source.getNeighbor(first, 1)).toBeNull();
-        expect(mocks.closePreview).toHaveBeenCalledOnce();
-        await vi.waitFor(() => expect(mocks.video).toHaveBeenCalledWith(
-            expect.objectContaining({ id: 2, name: 'clip.mp4' }), undefined, expect.objectContaining({ channelId: 1 }),
-        ));
+        const neighbor = await source.getNeighbor(first, 1);
+        expect(neighbor?.id).toBe(2);
+        expect(neighbor?.name).toBe('clip.mp4');
+        expect(mocks.closePreview).not.toHaveBeenCalled();
+        expect(mocks.video).not.toHaveBeenCalled();
     });
 
-    it('offers loaded photo neighbours for warming, never a video', async () => {
+    it('offers loaded neighbours for warming, videos included', async () => {
         const photos = mocks.page.getMockImplementation()!;
         mocks.page.mockImplementation(async (...args: unknown[]) => {
             const page = await photos(...args);
@@ -265,8 +265,74 @@ describe('gallery orchestration', () => {
         const [source, second] = mocks.preview.mock.calls[0];
 
         expect(source.peekNeighbor(second, -1)?.id).toBe(1);
-        expect(source.peekNeighbor(second, 1)).toBeNull();
+        expect(source.peekNeighbor(second, 1)?.id).toBe(3);
         expect(mocks.closePreview).not.toHaveBeenCalled();
+    });
+
+    it('playVideo closes the viewer, opens the player and reopens the viewer on the same item after close', async () => {
+        const photos = mocks.page.getMockImplementation()!;
+        mocks.page.mockImplementation(async (...args: unknown[]) => {
+            const page = await photos(...args);
+            return { ...page, items: page.items.map((item: { msgId: number }) => item.msgId === 2 ? { ...item, name: 'clip.mp4' } : item) };
+        });
+        await renderGallery();
+        const button = document.createElement('button'); button.className = 'gallery-cell'; button.dataset.id = '1'; button.dataset.index = '0'; host.append(button);
+        button.click();
+        await vi.waitFor(() => expect(mocks.preview).toHaveBeenCalledOnce());
+        const [source, first] = mocks.preview.mock.calls[0];
+
+        const videoItem = await source.getNeighbor(first, 1);
+        source.playVideo(videoItem);
+
+        await vi.waitFor(() => expect(mocks.video).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 2, name: 'clip.mp4' }), undefined, expect.objectContaining({ channelId: 1 }),
+        ));
+        expect(mocks.closePreview).toHaveBeenCalledOnce();
+        expect(mocks.onClose).toHaveBeenCalledOnce();
+
+        const reopen = mocks.onClose.mock.calls[0][0];
+        reopen();
+        await vi.waitFor(() => expect(mocks.preview).toHaveBeenCalledTimes(2));
+        expect(mocks.preview.mock.calls[1][1].id).toBe(2);
+    });
+
+    it('closing a player opened from the grid does not register a close hook', async () => {
+        const photos = mocks.page.getMockImplementation()!;
+        mocks.page.mockImplementation(async (...args: unknown[]) => {
+            const page = await photos(...args);
+            return { ...page, items: page.items.map((item: { msgId: number }) => item.msgId === 2 ? { ...item, name: 'clip.mp4' } : item) };
+        });
+        await renderGallery();
+        const button = document.createElement('button'); button.className = 'gallery-cell'; button.dataset.id = '2'; button.dataset.index = '1'; host.append(button);
+        button.click();
+
+        await vi.waitFor(() => expect(mocks.video).toHaveBeenCalledOnce());
+        expect(mocks.onClose).not.toHaveBeenCalled();
+        expect(mocks.preview).not.toHaveBeenCalled();
+    });
+
+    it('reopen is skipped when the drive changed while the player was open', async () => {
+        const photos = mocks.page.getMockImplementation()!;
+        mocks.page.mockImplementation(async (...args: unknown[]) => {
+            const page = await photos(...args);
+            return { ...page, items: page.items.map((item: { msgId: number }) => item.msgId === 2 ? { ...item, name: 'clip.mp4' } : item) };
+        });
+        await renderGallery();
+        const button = document.createElement('button'); button.className = 'gallery-cell'; button.dataset.id = '1'; button.dataset.index = '0'; host.append(button);
+        button.click();
+        await vi.waitFor(() => expect(mocks.preview).toHaveBeenCalledOnce());
+        const [source, first] = mocks.preview.mock.calls[0];
+
+        const videoItem = await source.getNeighbor(first, 1);
+        source.playVideo(videoItem);
+
+        await vi.waitFor(() => expect(mocks.onClose).toHaveBeenCalledOnce());
+        const reopen = mocks.onClose.mock.calls[0][0];
+        state.activeChannel = { id: 2 } as typeof state.activeChannel;
+        teardownGallery();
+        reopen();
+        await Promise.resolve();
+        expect(mocks.preview).toHaveBeenCalledOnce();
     });
 
     describe('desktop selection', () => {
