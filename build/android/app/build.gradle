@@ -11,7 +11,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.jeetraj.tdrive"
+        applicationId "com.jeetraj.tdrive.fork"
         minSdk 21
         targetSdk 35
         versionCode Integer.parseInt(System.getenv("ANDROID_VERSION_CODE") ?: "1")

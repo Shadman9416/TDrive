@@ -29,7 +29,7 @@ includes:
   android:
     taskfile: ./build/android/Taskfile.yml
     vars:
-      APP_ID: com.jeetraj.tdrive # must match applicationId in build/android/app/build.gradle
+      APP_ID: com.jeetraj.tdrive.fork # must match applicationId in build/android/app/build.gradle
 
 tasks:
   build:

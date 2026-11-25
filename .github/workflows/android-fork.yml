@@ -1,0 +1,114 @@
+name: Android fork build
+
+# Manual build of the custom fork APK (side-by-side app ID com.jeetraj.tdrive.fork).
+# Signed with the fork's own key from repository secrets; uploads the APK as an artifact.
+on:
+  workflow_dispatch:
+    inputs:
+      android_tag:
+        description: Version to stamp into the APK (vMAJOR.MINOR.PATCH)
+        default: v2.3.0
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    name: Build signed fork APK
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    env:
+      GOFLAGS: ""
+      ANDROID_TAG: ${{ inputs.android_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Validate Android version
+        run: bash scripts/android-version-code.sh "$ANDROID_TAG" >/dev/null
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup Java
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Build embedded frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install Wails CLI
+        env:
+          CGO_ENABLED: 0
+        run: |
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.22
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Point the build at the Android NDK
+        run: echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+
+      - name: Build Android library
+        run: wails3 task android:build PRODUCTION=true ARCH=arm64 VERSION="$ANDROID_TAG"
+
+      - name: Assemble signed APK
+        env:
+          TDRIVE_ANDROID_KEYSTORE_BASE64: ${{ secrets.TDRIVE_ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.TDRIVE_ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.TDRIVE_ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.TDRIVE_ANDROID_KEY_PASSWORD }}
+          ANDROID_REQUIRE_RELEASE_SIGNING: "true"
+        run: |
+          set -euo pipefail
+          for name in TDRIVE_ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing signing secret: $name" >&2
+              exit 1
+            fi
+          done
+          keystore="$RUNNER_TEMP/fork.keystore"
+          umask 077
+          trap 'rm -f "$keystore"' EXIT
+          printf '%s' "$TDRIVE_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          test -s "$keystore"
+          export ANDROID_KEYSTORE_FILE="$keystore"
+          export ANDROID_VERSION_NAME="${ANDROID_TAG#v}"
+          export ANDROID_VERSION_CODE="$(bash scripts/android-version-code.sh "$ANDROID_TAG")"
+          wails3 task android:assemble:apk:release
+
+      - name: Verify package and signer
+        run: |
+          set -euo pipefail
+          apk=build/bin/TDrive.apk
+          test -s "$apk"
+          tools_dir="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          certs="$("$tools_dir/apksigner" verify --verbose --print-certs "$apk")"
+          if [[ "$certs" == *"CN=Android Debug"* ]]; then echo "APK is debug-signed" >&2; exit 1; fi
+          printf '%s\n' "$certs" | grep -E 'Verified using|SHA-256 digest' | head -5
+          package="$("$tools_dir/aapt" dump badging "$apk" | sed -n '1p')"
+          echo "$package"
+          [[ "$package" == *"name='com.jeetraj.tdrive.fork'"* ]] || { echo "unexpected package id" >&2; exit 1; }
+          unzip -Z1 "$apk" | grep -Fxq 'lib/arm64-v8a/libwails.so'
+
+      - name: Upload APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: tdrive-fork-apk
+          path: build/bin/TDrive.apk
+          if-no-files-found: error
+          retention-days: 14
