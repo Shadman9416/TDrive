@@ -185,6 +185,29 @@ html:not(.mobile) .gallery-group-header { background: var(--color-surface-0); }
 .preview-nav-prev { left: 24px; }
 .preview-nav-next { right: 24px; }
 
+.preview-play {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 4;
+    width: 84px;
+    height: 84px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: var(--radius-pill);
+    background: rgba(12, 14, 22, 0.55);
+    color: #fff;
+    cursor: pointer;
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.3);
+}
+.preview-play[hidden] { display: none; }
+.preview-play svg { width: 40px; height: 40px; }
+
 .preview-counter {
     position: absolute;
     bottom: 22px;

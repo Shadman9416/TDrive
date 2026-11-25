@@ -55,6 +55,7 @@ export interface PreviewElements {
 
     readonly prevButton: HTMLButtonElement | null;
     readonly nextButton: HTMLButtonElement | null;
+    readonly playButton: HTMLButtonElement | null;
     readonly counter: HTMLElement | null;
     readonly downloadButton: HTMLButtonElement | null;
     readonly infoButton: HTMLButtonElement | null;
@@ -107,6 +108,7 @@ export function resolvePreviewElements(host: HTMLElement): PreviewElementsResult
 
             prevButton: within<HTMLButtonElement>('#preview-prev'),
             nextButton: within<HTMLButtonElement>('#preview-next'),
+            playButton: within<HTMLButtonElement>('#preview-play'),
             counter: within<HTMLElement>('#preview-counter'),
             downloadButton: within<HTMLButtonElement>('#preview-download'),
             infoButton: within<HTMLButtonElement>('#preview-info-btn'),

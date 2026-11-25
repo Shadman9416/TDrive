@@ -99,6 +99,8 @@ export interface PreviewNavigationSource {
     getPosition?(item: PreviewNavigationItem): { index: number; total: number } | null;
     /** The photo next door, if it is already known, with no side effects; used to warm its thumbnail. */
     peekNeighbor?(item: PreviewNavigationItem, direction: -1 | 1): PreviewNavigationItem | null;
+    /** Starts playback of a video slide; the viewer itself never plays. */
+    playVideo?(item: PreviewNavigationItem): void;
 }
 
 // Gallery supplies a bounded data source. Existing small-list callers keep
@@ -169,7 +171,7 @@ function clearActivePreview() {
 
 function isPreviewVisible() {
     const dom = els;
-    return Boolean(dom && !dom.image.hidden && dom.image.getAttribute("src"));
+    return Boolean(dom && !dom.modal.classList.contains("is-video-slide") && !dom.image.hidden && dom.image.getAttribute("src"));
 }
 
 function getSelectedPreviewTarget(): PreviewSelection {
@@ -267,6 +269,13 @@ function resetImageSurface({ keepThumbnail = false } = {}) {
     dom.image.removeAttribute("src");
     dom.image.alt = "";
     dom.modal.classList.remove('is-original-ready');
+}
+
+function setVideoSlide(on: boolean): void {
+    const dom = els;
+    if (!dom) return;
+    dom.modal.classList.toggle("is-video-slide", on);
+    if (dom.playButton) dom.playButton.hidden = !(on && navSource?.playVideo);
 }
 
 function showPreviewLoading(_label?: string) {
@@ -479,6 +488,7 @@ export async function loadPreview(target: PreviewNavigationItem, { keepThumbnail
     // being moved to keeps the thumbnail that was fetched for it.
     releasePreviewResources({ keepNeighbors: true });
     zoomPan.reset();
+    setVideoSlide(false);
     // Moving between photos keeps the one on screen until the next one has
     // something to show, so the stage never flashes empty.
     let holding = holdCurrent;
@@ -510,6 +520,13 @@ export async function loadPreview(target: PreviewNavigationItem, { keepThumbnail
         if (token !== previewRequestToken || !isPreviewOpen()) return;
         if (isEncryptionPasswordRequired(error)) showLockedState();
     });
+
+    if (isVideoFile(target.name)) {
+        replaceHeldImage();
+        setVideoSlide(true);
+        hidePreviewProgress();
+        return null;
+    }
 
     try {
         // This call happens only because opening/navigating the viewer was an
@@ -578,12 +595,13 @@ export function closePreviewModal() {
         dom.modal.setAttribute("aria-hidden", "true");
         previewA11y?.deactivate();
         deactivateModalOwnership(dom.modal);
-        dom.modal.classList.remove("is-chrome-visible", "is-preview-error", "is-preview-locked", "is-shared-entering");
+        dom.modal.classList.remove("is-chrome-visible", "is-preview-error", "is-preview-locked", "is-shared-entering", "is-video-slide");
         dom.filename.textContent = "";
         dom.loading.style.display = "none";
         dom.error.style.display = "none";
         dom.error.textContent = "";
     }
+    setVideoSlide(false);
     hidePreviewProgress();
     resetImageSurface();
     setGalleryThumbnailScheduling(true);
@@ -844,6 +862,7 @@ function showLockedState() {
     const dom = els;
     if (!dom?.locked || !unlockCard) return;
     previewTransition.cancel();
+    setVideoSlide(false);
     hidePreviewProgress();
     resetImageSurface();
     dom.error.style.display = "none";
@@ -1185,6 +1204,10 @@ export function activatePreviewModal(): () => void {
         event.stopPropagation();
         void navigatePreview(1);
     }) as EventListener);
+    listenPreview(dom.playButton, "click", ((event: MouseEvent) => {
+        event.stopPropagation();
+        if (activePreviewItem) navSource?.playVideo?.(activePreviewItem);
+    }) as EventListener);
     listenPreview(dom.downloadButton, "click", ((event: MouseEvent) => {
         event.stopPropagation();
         handleDownloadFromPreview();
@@ -1251,7 +1274,10 @@ export function activatePreviewModal(): () => void {
     }
     listenPreview(dom.stage, "wheel", handleZoomWheel as EventListener, { passive: false });
     listenPreview(dom.image, "dblclick", handleZoomDblClick as EventListener);
-    listenPreview(dom.image, "pointerdown", ((event: PointerEvent) => zoomPan.pointerDown(event)) as EventListener);
+    listenPreview(dom.image, "pointerdown", ((event: PointerEvent) => {
+        if (dom.modal.classList.contains("is-video-slide")) return;
+        zoomPan.pointerDown(event);
+    }) as EventListener);
     listenPreview(dom.image, "pointermove", ((event: PointerEvent) => zoomPan.pointerMove(event)) as EventListener);
     listenPreview(dom.image, "pointerup", ((event: PointerEvent) => zoomPan.pointerUp(event)) as EventListener);
     listenPreview(dom.image, "pointercancel", ((event: PointerEvent) => zoomPan.pointerUp(event)) as EventListener);

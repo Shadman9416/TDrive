@@ -8,6 +8,7 @@
     import FingerprintIcon from '@lucide/svelte/icons/fingerprint';
     import InfoIcon from '@lucide/svelte/icons/info';
     import LockIcon from '@lucide/svelte/icons/lock';
+    import PlayIcon from '@lucide/svelte/icons/play';
     import XIcon from '@lucide/svelte/icons/x';
     import ViewerTopBar from '../viewers/ViewerTopBar.svelte';
 </script>
@@ -36,6 +37,7 @@
     <div id="preview-stage" class="preview-content">
         <img id="preview-thumbnail" class="preview-thumbnail" src="" alt="" aria-hidden="true" hidden>
         <img id="preview-image" class="preview-original" src="" alt="" hidden>
+        <button id="preview-play" class="preview-play" type="button" aria-label="Play video" hidden><PlayIcon fill="currentColor" aria-hidden="true" /></button>
         <div id="preview-loading" class="preview-loading" role="status" aria-label="Loading original image" aria-hidden="true" style="display: none;">
             <div class="preview-loading-track" aria-hidden="true">
                 <div id="preview-loading-fill" class="preview-loading-fill"></div>
