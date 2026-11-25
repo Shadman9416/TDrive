@@ -817,6 +817,24 @@ describe("video HTML-to-native fallback", () => {
         await videoModule.closeVideoModal();
         expect(apiMocks.closeMedia).toHaveBeenCalledWith("current-token");
     });
+
+    it("calls the registered close handler once after close, then not again", async () => {
+        const opened = mediaOpenResult(8, "close-hook-token");
+        apiMocks.openMedia.mockResolvedValue(opened);
+
+        const videoModule = await import("./video");
+        deactivateVideo = videoModule.activateVideoModal();
+        const spy = vi.fn();
+        videoModule.onNextVideoModalClose(spy);
+
+        await videoModule.openVideoModal({ id: 8, name: "clip-8.mp4", size: 1024 });
+        await videoModule.closeVideoModal();
+        expect(spy).toHaveBeenCalledOnce();
+
+        await videoModule.openVideoModal({ id: 8, name: "clip-8.mp4", size: 1024 });
+        await videoModule.closeVideoModal();
+        expect(spy).toHaveBeenCalledOnce();
+    });
 });
 
 describe("macOS native video layering", () => {

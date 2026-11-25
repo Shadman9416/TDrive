@@ -1408,6 +1408,12 @@ export async function openVideoModal(
     await openVideoTarget(normalized, null, scope);
 }
 
+let closeHandler: (() => void) | null = null;
+
+export function onNextVideoModalClose(handler: (() => void) | null): void {
+    closeHandler = handler;
+}
+
 export async function closeVideoModal() {
     const modal = videoDOM.modal;
     if (!modal) return;
@@ -1432,6 +1438,9 @@ export async function closeVideoModal() {
     clearError();
     setLoadingStatusOverride("");
     setLoading(false);
+    const handler = closeHandler;
+    closeHandler = null;
+    handler?.();
 }
 
 
